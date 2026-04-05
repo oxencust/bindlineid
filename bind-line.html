@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>帳號綁定中</title>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Noto Sans TC', -apple-system, sans-serif;
+            min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, #e2ede6 0%, #daedec 30%, #faece8 60%, #fcf4e3 100%);
+        }
+        .bind-card {
+            background: #fff; border-radius: 16px; padding: 40px 32px;
+            max-width: 360px; width: 90%; text-align: center;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+        }
+        .bind-icon { font-size: 48px; margin-bottom: 16px; }
+        .bind-title { font-size: 18px; font-weight: 600; color: #2d3436; margin-bottom: 8px; }
+        .bind-msg { font-size: 14px; color: #666; line-height: 1.6; }
+        .bind-error { color: #e05252; }
+        .spinner {
+            width: 32px; height: 32px; border: 3px solid #eee;
+            border-top-color: #7ac19a; border-radius: 50%;
+            animation: spin 0.8s linear infinite; margin: 16px auto;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="bind-card">
+        <div class="bind-icon" id="bindIcon">🔗</div>
+        <div class="spinner" id="bindSpinner"></div>
+        <div class="bind-title" id="bindTitle">帳號綁定中...</div>
+        <div class="bind-msg" id="bindMsg">正在自動綁定您的衡點帳號，請稍候</div>
+    </div>
+
+<script>
+    const EDGE_URL = 'https://mnjilhpztnowaplggvkk.supabase.co/functions/v1/admin-api';
+    const PORTAL_URL = 'https://oxencust.github.io/xxx/';  // 管理入口網址
+
+    // 從 URL 取得參數
+    const params = new URLSearchParams(window.location.search);
+    // 也支援 LIFF 的 liff.state 參數（LIFF v2 會把 query string 放在這裡）
+    const liffState = params.get('liff.state');
+    const allParams = liffState ? new URLSearchParams(liffState) : params;
+
+    const action = allParams.get('action');
+    const table = allParams.get('table');
+    const id = allParams.get('id');
+
+    async function init() {
+        try {
+            // LIFF ID 填入你在衡點官方帳號建立的 LIFF
+            const LIFF_ID = '__HENGDIAN_LIFF_ID__'; // ← 替換為實際的衡點官方 LIFF ID
+            await liff.init({ liffId: LIFF_ID });
+
+            if (!liff.isLoggedIn()) {
+                liff.login({ redirectUri: window.location.href });
+                return;
+            }
+
+            if (action !== 'bind' || !table || !id) {
+                showResult('⚠️', '參數錯誤', '缺少必要的綁定參數', true);
+                return;
+            }
+
+            const profile = await liff.getProfile();
+            const lineId = profile.userId;
+
+            // 呼叫 Edge Function 綁定
+            const res = await fetch(EDGE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'bindLineId', table, id, lineId })
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                showResult('✅', '綁定成功', '即將返回管理入口...', false);
+                setTimeout(() => {
+                    // 跳回管理入口，帶 bind=success 參數
+                    window.location.href = PORTAL_URL + '?bind=success';
+                }, 1000);
+            } else {
+                showResult('❌', '綁定失敗', result.error || '請聯絡管理員', true);
+            }
+
+        } catch (e) {
+            console.error('Bind error:', e);
+            showResult('❌', '發生錯誤', '請重新嘗試或聯絡管理員', true);
+        }
+    }
+
+    function showResult(icon, title, msg, isError) {
+        document.getElementById('bindIcon').textContent = icon;
+        document.getElementById('bindSpinner').style.display = 'none';
+        document.getElementById('bindTitle').textContent = title;
+        const msgEl = document.getElementById('bindMsg');
+        msgEl.textContent = msg;
+        if (isError) {
+            msgEl.classList.add('bind-error');
+            // 錯誤時 5 秒後也回管理入口
+            setTimeout(() => { window.location.href = PORTAL_URL; }, 5000);
+        }
+    }
+
+    init();
+</script>
+</body>
+</html>
